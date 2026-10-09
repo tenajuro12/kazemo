@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="kk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kazemo dashboard</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fffdf8;--ink:#1d2230;--mut:#636a78;--line:#e3ddd0;--acc:#c8541f;--acc2:#2f5ec4;--bar:#2f5ec4;--bad:#c8541f;--chip:#efe9dc}
+@media (prefers-color-scheme:dark){:root{--bg:#14171f;--card:#1c2029;--ink:#e9e6df;--mut:#9aa1ae;--line:#2c313c;--acc:#f08a52;--acc2:#7ea2f2;--bar:#7ea2f2;--bad:#f08a52;--chip:#262b36}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+header{padding:28px 32px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;justify-content:space-between}
+h1{margin:0;font-size:26px;letter-spacing:-.3px}
+h1 span{color:var(--acc)}
+.sub{color:var(--mut);font-size:13px}
+main{padding:8px 32px 48px;display:grid;gap:18px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;min-width:0}
+.card h2{margin:0 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mut);font-weight:600}
+.span3{grid-column:span 3}.span4{grid-column:span 4}.span5{grid-column:span 5}.span6{grid-column:span 6}.span7{grid-column:span 7}.span8{grid-column:span 8}.span12{grid-column:span 12}
+@media (max-width:900px){main{padding:8px 16px 40px}.span3,.span4,.span5,.span6,.span7,.span8{grid-column:span 12}header{padding:20px 16px 4px}}
+.kpi{font-size:34px;font-weight:700;letter-spacing:-1px}
+.kpi small{font-size:14px;color:var(--mut);font-weight:400;letter-spacing:0;margin-left:6px}
+.bars{display:flex;flex-direction:column;gap:7px}
+.bar{display:grid;grid-template-columns:minmax(80px,38%) 1fr 56px;gap:10px;align-items:center;font-size:14px}
+.bar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .trk{height:12px;background:var(--chip);border-radius:6px;overflow:hidden}
+.bar .fil{height:100%;background:var(--bar);border-radius:6px}
+.bar.bad .fil{background:var(--bad)}
+.bar .num{text-align:right;font-variant-numeric:tabular-nums;color:var(--mut)}
+.days{display:flex;align-items:flex-end;gap:3px;height:140px;padding-top:6px}
+.days div{flex:1;background:var(--bar);border-radius:3px 3px 0 0;min-height:2px;position:relative}
+.days div:hover{background:var(--acc)}
+.axis{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;margin-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--chip);border-radius:999px;padding:4px 11px;font-size:14px}
+.chip b{font-weight:600;margin-left:4px;color:var(--mut)}
+.emo{font-size:20px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.8px;cursor:pointer;user-select:none;white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.rate{display:inline-block;min-width:48px;padding:1px 8px;border-radius:6px;background:var(--chip);text-align:center}
+.tools{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center}
+.tabs{display:flex;gap:4px;background:var(--chip);padding:4px;border-radius:10px}
+.tabs button{border:0;background:none;color:var(--ink);padding:6px 14px;border-radius:7px;font:inherit;cursor:pointer}
+.tabs button.on{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+input,select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+input[type=search]{flex:1;min-width:200px}
+.post{padding:12px 4px;border-bottom:1px solid var(--line)}
+.post .txt{white-space:pre-wrap;word-break:break-word}
+.post .meta{display:flex;flex-wrap:wrap;gap:12px;color:var(--mut);font-size:12.5px;margin-top:5px}
+.why{color:var(--bad);font-weight:600}
+mark{background:#ffd98a;color:#1d2230;border-radius:3px;padding:0 1px}
+.pager{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:14px;color:var(--mut)}
+.pager button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:5px 12px;cursor:pointer}
+.pager button:disabled{opacity:.4;cursor:default}
+.err{border-left:4px solid var(--bad);padding:8px 12px;background:var(--chip);border-radius:6px;margin-bottom:8px;font-size:13.5px;word-break:break-word}
+.ok{color:var(--mut);font-size:14px}
+.empty{color:var(--mut);font-size:14px;padding:6px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>kazemo <span>dashboard</span></h1>
+  <div class="sub" id="sub"></div>
+</header>
+<main>
+  <section class="card span3"><h2>Collected</h2><div class="kpi" id="k-raw"></div></section>
+  <section class="card span3"><h2>Kept</h2><div class="kpi" id="k-kept"></div></section>
+  <section class="card span3"><h2>Rejected</h2><div class="kpi" id="k-rej"></div></section>
+  <section class="card span3"><h2>Period</h2><div class="kpi" id="k-days" style="font-size:28px"></div></section>
+
+  <section class="card span5"><h2>Why posts were removed</h2><div class="bars bad" id="reasons"></div></section>
+  <section class="card span7"><h2>Kept posts per day</h2><div class="days" id="days"></div><div class="axis" id="days-axis"></div></section>
+
+  <section class="card span12"><h2>Yield by keyword / channel</h2>
+    <div style="overflow-x:auto"><table id="yields"><thead><tr>
+      <th data-k="source">Source</th><th data-k="target">Keyword / channel</th><th data-k="collected" class="n">Collected</th>
+      <th data-k="kept" class="n">Kept</th><th data-k="rate" class="n">Kept %</th><th>Main removal reasons</th>
+    </tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="card span4"><h2>Top emoji</h2><div class="chips" id="emoji"></div></section>
+  <section class="card span8"><h2>Frequent words in kept posts</h2><div class="chips" id="words"></div></section>
+
+  <section class="card span12"><h2>Posts</h2>
+    <div class="tools">
+      <div class="tabs" id="tabs"><button data-t="kept" class="on">Kept</button><button data-t="rejected">Rejected</button></div>
+      <input type="search" id="q" placeholder="Search text…">
+      <select id="f-target"><option value="">All keywords / channels</option></select>
+      <select id="f-source"><option value="">All sources</option></select>
+      <select id="f-why" hidden><option value="">All reasons</option></select>
+      <select id="sort"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="likes">Most likes</option><option value="replies">Most replies</option></select>
+    </div>
+    <div class="sub" id="count"></div>
+    <div id="posts"></div>
+    <div class="pager"><button id="prev">← Prev</button><span id="page"></span><button id="next">Next →</button></div>
+  </section>
+
+  <section class="card span12"><h2>Last run</h2><div id="run"></div></section>
+</main>
+<script>
+const D = /*__DATA__*/null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = n => Number(n).toLocaleString("en-US").replace(/,/g, " ");
+const pct = (a, b) => b ? Math.round(100 * a / b) + "%" : "–";
+
+function bars(el, pairs, cls) {
+  if (!pairs.length) { el.innerHTML = '<div class="empty">Nothing yet</div>'; return; }
+  const max = Math.max(...pairs.map(p => p[1]));
+  el.innerHTML = pairs.map(([k, v]) => `<div class="bar ${cls||""}"><div class="lab" title="${esc(k)}">${esc(k)}</div>
+    <div class="trk"><div class="fil" style="width:${(100*v/max).toFixed(1)}%"></div></div><div class="num">${fmt(v)}</div></div>`).join("");
+}
+
+// summary
+$("#sub").textContent = `${D.folder} · generated ${D.generated} · kazemo ${D.version}`;
+const c = D.counts, total = c.kept + c.rejected;
+$("#k-raw").innerHTML = fmt(c.raw) + "<small>posts</small>";
+$("#k-kept").innerHTML = fmt(c.kept) + `<small>${pct(c.kept, total)} of processed</small>`;
+$("#k-rej").innerHTML = fmt(c.rejected) + `<small>${pct(c.rejected, total)}</small>`;
+const dm = s => s.slice(8, 10) + "." + s.slice(5, 7);
+$("#k-days").innerHTML = D.days.length
+  ? `${dm(D.days[0][0])} → ${dm(D.days[D.days.length-1][0])}<small>${D.days[D.days.length-1][0].slice(0, 4)} · ${D.days.length} days</small>`
+  : "–";
+bars($("#reasons"), Object.entries(D.reasons), "bad");
+
+// timeline
+if (D.days.length) {
+  const max = Math.max(...D.days.map(d => d[1]));
+  $("#days").innerHTML = D.days.map(([d, n]) => `<div style="height:${(100*n/max).toFixed(1)}%" title="${d}: ${n}"></div>`).join("");
+  $("#days-axis").innerHTML = `<span>${D.days[0][0]}</span><span>${D.days[D.days.length-1][0]}</span>`;
+} else $("#days").innerHTML = '<div class="empty" style="background:none">No dated posts</div>';
+
+// yields
+let ySort = {k: "kept", dir: -1};
+function drawYields() {
+  const rows = [...D.yields].sort((a, b) => {
+    const x = a[ySort.k], y = b[ySort.k];
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * ySort.dir;
+  });
+  $("#yields tbody").innerHTML = rows.length ? rows.map(r => {
+    const why = Object.entries(r.rejected).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${esc(k)} ${v}`).join(", ");
+    const hue = Math.round(r.rate * 120);
+    return `<tr><td>${esc(r.source)}</td><td>${esc(r.target)}</td><td class="n">${fmt(r.collected)}</td><td class="n">${fmt(r.kept)}</td>
+      <td class="n"><span class="rate" style="color:hsl(${hue} 55% 42%)">${Math.round(r.rate*100)}%</span></td><td class="sub">${why}</td></tr>`;
+  }).join("") : '<tr><td colspan="6" class="empty">Nothing yet</td></tr>';
+}
+document.querySelectorAll("#yields th[data-k]").forEach(th => th.onclick = () => {
+  const k = th.dataset.k; ySort = {k, dir: ySort.k === k ? -ySort.dir : (k === "target" || k === "source" ? 1 : -1)}; drawYields();
+});
+drawYields();
+
+// emoji and words
+$("#emoji").innerHTML = D.emoji.length ? D.emoji.map(([e, n]) => `<span class="chip"><span class="emo">${esc(e)}</span><b>${n}</b></span>`).join("") : '<div class="empty">No emoji</div>';
+$("#words").innerHTML = D.words.length ? D.words.map(([w, n]) => `<span class="chip">${esc(w)}<b>${n}</b></span>`).join("") : '<div class="empty">Nothing yet</div>';
+
+// posts browser
+let tab = "kept", page = 0;
+const PER = 50;
+function fill(sel, values) {
+  const el = $(sel), first = el.options[0].outerHTML;
+  el.innerHTML = first + [...new Set(values)].filter(Boolean).sort().map(v => `<option>${esc(v)}</option>`).join("");
+}
+function refreshFilters() {
+  const rows = D[tab];
+  fill("#f-target", rows.map(r => r.c)); fill("#f-source", rows.map(r => r.s)); fill("#f-why", rows.map(r => r.why));
+  $("#f-why").hidden = tab !== "rejected";
+}
+function hl(text, q) {
+  const t = esc(text);
+  if (!q) return t;
+  const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  return t.replace(re, m => `<mark>${m}</mark>`);
+}
+function drawPosts() {
+  const q = $("#q").value.trim().toLowerCase(), ft = $("#f-target").value, fs = $("#f-source").value, fw = $("#f-why").value;
+  let rows = D[tab].filter(r => (!q || r.t.toLowerCase().includes(q)) && (!ft || r.c === ft) && (!fs || r.s === fs) && (!fw || r.why === fw));
+  const s = $("#sort").value;
+  rows.sort((a, b) => s === "likes" ? b.lk - a.lk : s === "replies" ? b.rp - a.rp : s === "old" ? a.d.localeCompare(b.d) : b.d.localeCompare(a.d));
+  const pages = Math.max(1, Math.ceil(rows.length / PER));
+  page = Math.min(page, pages - 1);
+  $("#count").textContent = `${fmt(rows.length)} posts`;
+  $("#posts").innerHTML = rows.slice(page * PER, page * PER + PER).map(r => `<div class="post"><div class="txt">${hl(r.t, q)}</div>
+    <div class="meta">${r.why ? `<span class="why">${esc(r.why)}</span>` : ""}<span>${esc(r.d.replace("T", " "))}</span><span>${esc(r.s)} · ${esc(r.c)}</span>
+    <span>♥ ${fmt(r.lk)}</span><span>↩ ${fmt(r.rp)}</span>${r.lg ? `<span>${esc(r.lg)}</span>` : ""}${r.lb ? `<span>label: ${esc(r.lb)}</span>` : ""}</div></div>`).join("")
+    || '<div class="empty">No posts match</div>';
+  $("#page").textContent = `${page + 1} / ${pages}`;
+  $("#prev").disabled = page === 0; $("#next").disabled = page >= pages - 1;
+}
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x === b));
+  tab = b.dataset.t; page = 0; refreshFilters(); drawPosts();
+});
+["#q", "#f-target", "#f-source", "#f-why", "#sort"].forEach(s => $(s).addEventListener("input", () => { page = 0; drawPosts(); }));
+$("#prev").onclick = () => { page--; drawPosts(); };
+$("#next").onclick = () => { page++; drawPosts(); };
+refreshFilters(); drawPosts();
+
+// last run
+const R = D.report || {}, parts = [];
+if (R.started) parts.push(`<div class="ok">Started ${esc(R.started)} with ${esc(R.config || "")}</div>`);
+for (const [name, res] of Object.entries(R.collect || {})) {
+  parts.push(res.error ? `<div class="err"><b>${esc(name)}</b>: ${esc(res.error)}</div>`
+    : `<div class="ok"><b>${esc(name)}</b>: ${fmt(res.written)} new, ${fmt(res.duplicates)} already had, ${fmt(res.filtered)} filtered at collection</div>`);
+}
+if (R.agent) parts.push(R.agent.error ? `<div class="err"><b>agent</b>: ${esc(R.agent.error)}</div>` : `<div class="ok"><b>agent</b>: ${esc(R.agent.summary || "")}</div>`);
+$("#run").innerHTML = parts.join("") || '<div class="empty">No run report (report.json) in this folder</div>';
+</script>
+</body>
+</html>

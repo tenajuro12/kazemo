@@ -3,7 +3,8 @@
 # Keys go in .env, never here.
 
 [output]
-dir = "data"                 # raw.jsonl, clean.jsonl, rejected.jsonl, report.json
+dir = "data"                 # raw.jsonl, clean.jsonl, rejected.jsonl, report.json, dashboard.html
+dashboard = true             # build dashboard.html after every run
 
 [collect]
 limit = 100                  # posts per target (can be overridden per source)

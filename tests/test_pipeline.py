@@ -51,4 +51,6 @@ def test_cli_stats_and_version(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["posts"] == 10
     with pytest.raises(SystemExit):
         main(["--version"])
-    assert "kazemo 0.4.0" in capsys.readouterr().out
+    from kazemo import __version__
+
+    assert f"kazemo {__version__}" in capsys.readouterr().out

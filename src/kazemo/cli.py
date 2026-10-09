@@ -17,7 +17,7 @@ from .config import MissingCredential, load_dotenv
 from .pipeline import plot_labels, read_jsonl
 
 SOURCES = ["telegram", "threads", "threads-apify", "youtube"]
-COMMANDS = {"collect", "process", "stats", "login", "agent", "run"}
+COMMANDS = {"collect", "process", "stats", "login", "agent", "run", "dashboard"}
 
 
 def _print_json(obj: dict) -> None:
@@ -83,6 +83,18 @@ def cmd_stats(args: argparse.Namespace) -> int:
     from .pipeline import corpus_report
 
     _print_json(corpus_report(read_jsonl(args.input)))
+    return 0
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    from .dashboard import write_dashboard
+
+    path = write_dashboard(args.data, args.output)
+    print(f"dashboard: {path.resolve()}")
+    if args.open:  # pragma: no cover - opens a browser
+        import webbrowser
+
+        webbrowser.open(path.resolve().as_uri())
     return 0
 
 
@@ -169,6 +181,12 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("stats", help="print corpus statistics for a JSONL file")
     s.add_argument("input")
     s.set_defaults(func=cmd_stats)
+
+    db = sub.add_parser("dashboard", help="build an offline HTML dashboard for a data folder")
+    db.add_argument("data", nargs="?", default="data", help="folder with raw/clean/rejected.jsonl (default: data)")
+    db.add_argument("-o", "--output", help="HTML file (default: <data>/dashboard.html)")
+    db.add_argument("--open", action="store_true", help="open it in the browser")
+    db.set_defaults(func=cmd_dashboard)
 
     r = sub.add_parser("run", help="run the whole pipeline from a TOML config: collect -> process -> report")
     r.add_argument("config", help="see pipeline.example.toml")
