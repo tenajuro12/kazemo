@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from ..preprocess import clean, detect_language, pseudonymise
+from ..preprocess import anonymise, detect_language
 
 
 @dataclass
@@ -24,7 +24,7 @@ class Post:
     source: str  # telegram | threads | youtube
     channel: str  # public channel, query or video the post came from
     date: str  # ISO 8601
-    text: str  # cleaned and pseudonymised
+    text: str  # anonymised (links, mentions, e-mails, phones); otherwise as posted
     lang: str = "unknown"
     meta: dict = field(default_factory=dict)
 
@@ -34,7 +34,8 @@ def make_uid(source: str, raw_id: object) -> str:
 
 
 def to_post(source: str, raw_id: object, channel: str, date: str, text: str, **meta) -> Post:
-    cleaned = pseudonymise(clean(text or ""))
+    # only the privacy step here; cleaning and filtering happen in `kazemo process`
+    cleaned = anonymise(text or "")
     return Post(
         uid=make_uid(source, raw_id),
         source=source,

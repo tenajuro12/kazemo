@@ -44,6 +44,59 @@ def pseudonymise(text: str, salt: str = "kazemo") -> str:
     return MENTION_RE.sub(_hash, text)
 
 
+def anonymise(text: str) -> str:
+    """Privacy step applied at collection time: links, mentions, e-mails and phones.
+
+    Hashtags, emoji and punctuation are left untouched for the later stages.
+    """
+    return pseudonymise(URL_RE.sub("<URL>", normalize(text)))
+
+
+def is_emoji(ch: str) -> bool:
+    return unicodedata.category(ch) == "So" or 0x1F3FB <= ord(ch) <= 0x1F3FF  # symbols + skin tones
+
+
+EMOJI_JOINERS = {"\u200d", "\ufe0f", "\ufe0e"}
+
+
+def extract_emojis(text: str) -> list[str]:
+    """Emoji characters in order of appearance (skin tones and joiners skipped)."""
+    return [ch for ch in text if is_emoji(ch) and not 0x1F3FB <= ord(ch) <= 0x1F3FF]
+
+
+def remove_emojis(text: str) -> str:
+    return normalize("".join(ch for ch in text if not is_emoji(ch) and ch not in EMOJI_JOINERS))
+
+
+def emojis_to_text(text: str) -> str:
+    """Replace each emoji with its Unicode name, e.g. 😭 -> ``:loudly_crying_face:``.
+
+    Useful for models whose tokenizer does not know emoji.
+    """
+    out = []
+    for ch in text:
+        if ch in EMOJI_JOINERS or 0x1F3FB <= ord(ch) <= 0x1F3FF:
+            continue
+        if is_emoji(ch):
+            name = unicodedata.name(ch, "emoji").lower().replace(" ", "_").replace("-", "_")
+            out.append(f" :{name}: ")
+        else:
+            out.append(ch)
+    return normalize("".join(out))
+
+
+TRAILING_TAGS_RE = re.compile(r"(?:\s*#\w+){2,}\s*$")
+
+
+def count_hashtags(text: str) -> int:
+    return len(HASHTAG_RE.findall(text))
+
+
+def strip_trailing_hashtags(text: str) -> str:
+    """Drop a block of two or more hashtags at the end of a post (typical for promo posts)."""
+    return TRAILING_TAGS_RE.sub("", text).rstrip()
+
+
 def clean(text: str, keep_emoji: bool = True) -> str:
     """Clean one post: links, hashtags, elongations, whitespace.
 
@@ -54,7 +107,7 @@ def clean(text: str, keep_emoji: bool = True) -> str:
     text = HASHTAG_RE.sub(r"\1", text)
     text = REPEAT_RE.sub(r"\1\1\1", text)  # "ааааа" -> "ааа"
     if not keep_emoji:
-        text = "".join(ch for ch in text if unicodedata.category(ch) != "So")
+        text = remove_emojis(text)
     return normalize(text)
 
 
