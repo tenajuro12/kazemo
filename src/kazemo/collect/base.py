@@ -81,6 +81,33 @@ def http_get_json(url: str, params: dict, retries: int = 3, backoff: float = 2.0
     raise ApiError(f"giving up on {url}")  # pragma: no cover
 
 
+def http_post_json(
+    url: str,
+    params: dict,
+    body: dict,
+    headers: dict | None = None,
+    retries: int = 2,
+    backoff: float = 5.0,
+    timeout: int = 320,
+):
+    """POST JSON and return the decoded JSON reply, retrying on rate limits and server errors."""
+    full = f"{url}?{urllib.parse.urlencode(params)}"
+    data = json.dumps(body).encode("utf-8")
+    for attempt in range(retries + 1):
+        hdrs = {"Content-Type": "application/json", **(headers or {})}
+        req = urllib.request.Request(full, data=data, headers=hdrs, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed https hosts
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 502, 503) and attempt < retries:
+                time.sleep(backoff * (2**attempt))
+                continue
+            text = e.read().decode("utf-8", "replace")[:300]
+            raise ApiError(f"HTTP {e.code} from {url}: {text}") from None
+    raise ApiError(f"giving up on {url}")  # pragma: no cover
+
+
 # --- sink ----------------------------------------------------------------------------------------
 
 
