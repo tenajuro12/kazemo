@@ -304,11 +304,12 @@ class CollectionAgent:
 
 
 def _anthropic_client():
+    api_key = require("ANTHROPIC_API_KEY", "Create one at https://platform.claude.com.")
     try:
         import anthropic
     except ImportError as e:  # pragma: no cover
         raise RuntimeError('The agent needs the Anthropic SDK: pip install "kazemo[agent]"') from e
-    return anthropic.Anthropic(api_key=require("ANTHROPIC_API_KEY", "Create one at https://platform.claude.com."))
+    return anthropic.Anthropic(api_key=api_key)
 
 
 def _block_to_dict(b) -> dict:
