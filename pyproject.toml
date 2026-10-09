@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kazemo"
-version = "0.3.0"
+version = "0.4.0"
 description = "Collection and pre-processing toolkit for Kazakh / code-mixed social-media text (emotion detection research)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Sabyrov Tenelbek" }]
 requires-python = ">=3.10"
-dependencies = ["matplotlib>=3.7"]
+dependencies = ["matplotlib>=3.7", "tomli>=2; python_version < '3.11'"]
 
 [project.optional-dependencies]
 telegram = ["telethon>=1.36"]

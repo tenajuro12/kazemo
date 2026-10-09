@@ -1,0 +1,44 @@
+# kazemo run pipeline.toml
+# Stages: collect (each [[collect.source]], then the optional [agent]) -> process -> report.
+# Keys go in .env, never here.
+
+[output]
+dir = "data"                 # raw.jsonl, clean.jsonl, rejected.jsonl, report.json
+
+[collect]
+limit = 100                  # posts per target (can be overridden per source)
+lang = ["kk"]                # keep only these languages already at collection; [] = keep all
+
+[[collect.source]]
+name = "threads-apify"       # paid per post: keep limits small at first
+targets = ["қуаныштымын", "уайымдаймын", "шаршадым", "қорқамын", "ашуым келді", "сағындым"]
+mode = "recent"              # recent | top
+
+# [[collect.source]]
+# name = "telegram"
+# targets = ["some_public_channel", "another_channel"]
+# limit = 500
+# search = "қуаныш"          # optional: only messages with this word
+
+# [[collect.source]]
+# name = "youtube"
+# targets = ["қазақша подкаст", "қазақша влог"]
+# mode = "search"            # video (targets are video IDs) | search
+
+# Optional: let the LLM agent extend the corpus after the fixed sources (needs ANTHROPIC_API_KEY)
+# [agent]
+# goal = "Kazakh posts expressing joy, sadness, fear, anxiety, anger, and neutral everyday posts"
+# sources = ["threads-apify", "telegram"]
+# max_posts = 300
+# max_steps = 15
+# model = "claude-sonnet-5-5"
+
+[process]
+lang = ["kk"]                # [] = keep all languages
+emoji = "keep"               # keep | remove | text (😭 -> :loudly_crying_face:)
+min_words = 3                # drop posts with fewer words
+filter_ads = true            # promo vocabulary, prices, contacts, many hashtags
+ad_threshold = 2             # how many promo signals make a post an ad
+filter_formulaic = true      # "рахмет", "пайдалы болғанына қуаныштымын", "+"...
+strip_trailing_hashtags = true
+deduplicate = true           # same words ignoring punctuation, emoji, case, mentions
