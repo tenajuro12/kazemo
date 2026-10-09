@@ -271,7 +271,6 @@ APIFY_ITEMS = [
         "displayName": "Real Person",
         "likeCount": 12,
         "replyCount": 3,
-        "isReply": False,
     },
     {"postId": "112", "text": "Сегодня просто устал", "timestamp": "2026-10-01T10:00:00Z", "likeCount": None},
     {"postId": "113", "text": ""},
@@ -279,41 +278,83 @@ APIFY_ITEMS = [
 ]
 
 
-def test_apify_threads_maps_items_and_drops_authors(monkeypatch):
+@pytest.fixture
+def no_apify_env(monkeypatch):
+    for k in ("APIFY_THREADS_SESSION", "APIFY_THREADS_ACTOR"):
+        monkeypatch.delenv(k, raising=False)
+
+
+def test_apify_default_actor_needs_no_login(no_apify_env):
     from kazemo.collect import ApifyThreadsCollector
 
-    monkeypatch.delenv("APIFY_THREADS_SESSION", raising=False)
     http = FakePost(APIFY_ITEMS)
     posts = list(ApifyThreadsCollector(token="tok", http=http).fetch("қуаныш", 50))
 
     url, params, body = http.calls[0]
-    assert url.endswith("/actors/futurizerush~threads-search-scraper-api/run-sync-get-dataset-items")
+    assert url.endswith("/actors/aydar_cosmos~threads-scraper/run-sync-get-dataset-items")
     assert params == {"maxItems": 50, "timeout": 290}  # token goes in a header, not the URL
-    assert body == {"keywords": ["қуаныш"], "maxResults": 50, "searchType": "recent"}
+    assert body == {"mode": "search", "query": "қуаныш", "maxResults": 50}
     assert len(posts) == 2
     p = posts[0]
     assert p.source == "threads" and p.channel == "қуаныш" and p.lang == "kk"
-    assert p.date.startswith("2024-10-01") and p.meta == {"likes": 12, "replies": 3, "is_reply": False, "via": "apify"}
+    assert p.date.startswith("2024-10-01") and p.meta == {"likes": 12, "replies": 3, "via": "apify"}
     dumped = json.dumps(p.__dict__, ensure_ascii=False)
     assert "real_person" not in dumped and "999" not in dumped and "Real Person" not in dumped
     assert posts[1].date == "2026-10-01T10:00:00Z" and posts[1].meta["likes"] == 0
 
 
-def test_apify_threads_options(monkeypatch):
+def test_apify_alternative_field_names(no_apify_env):
     from kazemo.collect import ApifyThreadsCollector
 
+    items = [
+        {
+            "code": "Cx1",
+            "caption": {"text": "Ертең емтихан, уайымдаймын"},
+            "taken_at": 1727776800000,
+            "like_count": "7",
+            "reply_count": {"count": 2},
+            "user": {"username": "someone"},
+        },
+    ]
+    (p,) = ApifyThreadsCollector(token="t", http=FakePost(items)).fetch("уайым", 10)
+    assert p.text.startswith("Ертең") and p.date.startswith("2024-10-01") and p.meta["likes"] == 7
+    assert p.meta["replies"] == 2 and "someone" not in json.dumps(p.__dict__)
+
+
+def test_apify_unknown_fields_are_reported(no_apify_env):
+    from kazemo.collect import ApifyThreadsCollector
+    from kazemo.collect.base import ApiError
+
+    with pytest.raises(ApiError, match=r"\['message', 'uuid'\]"):
+        list(ApifyThreadsCollector(token="t", http=FakePost([{"uuid": "1", "message": "x"}])).fetch("x", 5))
+
+
+def test_apify_session_actor(no_apify_env, monkeypatch):
+    from kazemo.collect import ApifyThreadsCollector
+
+    actor = "futurizerush/threads-search-scraper-api"
+    with pytest.raises(MissingCredential, match="APIFY_THREADS_SESSION"):
+        ApifyThreadsCollector(token="t", actor=actor)
     monkeypatch.setenv("APIFY_THREADS_SESSION", "sess")
-    monkeypatch.setenv("APIFY_THREADS_ACTOR", "someone/other-actor")
-    c = ApifyThreadsCollector(mode="top", token="t", http=FakePost([]))
+    c = ApifyThreadsCollector(mode="top", token="t", actor=actor, http=FakePost([]))
     assert c.build_input("x", 5) == {"keywords": ["x"], "maxResults": 10, "searchType": "top", "sessionId": "sess"}
     assert c.build_input("x", 9999)["maxResults"] == 2000
     list(c.fetch("x", 5))
-    assert "someone~other-actor" in c.http.calls[0][0]
+    assert "futurizerush~threads-search-scraper-api" in c.http.calls[0][0]
+
+
+def test_apify_actor_from_env_and_bad_mode(no_apify_env, monkeypatch):
+    from kazemo.collect import ApifyThreadsCollector
+
+    monkeypatch.setenv("APIFY_THREADS_ACTOR", "someone/other-actor")
+    c = ApifyThreadsCollector(token="t", http=FakePost([]))
+    list(c.fetch("x", 5000))
+    assert "someone~other-actor" in c.http.calls[0][0] and c.http.calls[0][2]["maxResults"] == 1000
     with pytest.raises(ValueError):
         ApifyThreadsCollector(mode="search", token="t")
 
 
-def test_apify_threads_errors(monkeypatch):
+def test_apify_threads_errors(no_apify_env, monkeypatch):
     from kazemo.collect import ApifyThreadsCollector
     from kazemo.collect.base import ApiError
 
@@ -336,7 +377,7 @@ def test_apify_threads_errors(monkeypatch):
         ApifyThreadsCollector()
 
 
-def test_cli_collect_threads_apify(tmp_path, monkeypatch, capsys):
+def test_cli_collect_threads_apify(tmp_path, monkeypatch, capsys, no_apify_env):
     import kazemo.collect.base as base
 
     monkeypatch.chdir(tmp_path)
@@ -348,14 +389,14 @@ def test_cli_collect_threads_apify(tmp_path, monkeypatch, capsys):
         return APIFY_ITEMS
 
     monkeypatch.setattr(base, "http_post_json", fake)
-    assert main(["collect", "threads-apify", "қуаныш", "-o", "raw.jsonl", "--lang", "kk", "--mode", "top"]) == 0
+    assert main(["collect", "threads-apify", "қуаныш", "-o", "raw.jsonl", "--lang", "kk"]) == 0
     assert json.loads(capsys.readouterr().out) == {
         "source": "threads-apify",
         "written": 1,
         "duplicates": 0,
         "filtered": 1,
     }
-    assert calls[0][2]["searchType"] == "top"
+    assert calls[0][2]["query"] == "қуаныш"
     assert calls[0][3] == {"Authorization": "Bearer tok"} and "tok" not in calls[0][0]
 
 
@@ -395,3 +436,17 @@ def test_http_post_json_retries_then_succeeds(monkeypatch):
     monkeypatch.setattr(base.urllib.request, "urlopen", always_401)
     with pytest.raises(base.ApiError, match="401"):
         base.http_post_json("https://x.test/run", {}, {})
+
+
+def test_cli_api_error_is_one_line(tmp_path, monkeypatch, capsys, no_apify_env):
+    import kazemo.collect.base as base
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APIFY_TOKEN", "tok")
+
+    def fail(url, params, body, headers=None):
+        raise base.ApiError("HTTP 400 from apify: invalid input")
+
+    monkeypatch.setattr(base, "http_post_json", fail)
+    assert main(["collect", "threads-apify", "x", "-o", "raw.jsonl"]) == 1
+    assert capsys.readouterr().err.strip() == "error: HTTP 400 from apify: invalid input"
