@@ -120,4 +120,8 @@ def run(config_path: str | Path, skip_collect: bool = False, collectors: dict | 
     report["process"] = {"total": prep.total, "kept": prep.kept, "rejected": prep.rejected}
     report["corpus"] = corpus_report(kept)
     (out_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if cfg.get("output", {}).get("dashboard", True):
+        from .dashboard import write_dashboard
+
+        report["dashboard"] = str(write_dashboard(out_dir))
     return report
