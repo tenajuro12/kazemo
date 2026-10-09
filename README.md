@@ -3,196 +3,268 @@
 [![CI](https://github.com/tenajuro12/kazemo/actions/workflows/ci.yml/badge.svg)](https://github.com/tenajuro12/kazemo/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Collection and pre-processing toolkit for **Kazakh and code-mixed Kazakh–Russian social-media text**.
-It is the data layer of a master's thesis on automatically determining users' emotional state from
-social-network messages with NLP.
+Data pipeline for **emotion research on Kazakh and code-mixed Kazakh–Russian social media**: it collects
+public posts, anonymises them, filters out noise and produces a clean corpus with a report and an offline
+dashboard. It is the data layer of a master's thesis on automatically determining users' emotional state
+from social-network messages with NLP.
 
 ```
-Telegram ─┐   kazemo collect   (you choose the targets)
-Threads  ─┼─►       or         ─► raw.jsonl ─► kazemo process ─► clean.jsonl ─► annotation / LaBSE
-YouTube  ─┘   kazemo agent     (an LLM chooses targets within a budget)
+  Telegram ──┐
+  Threads ───┼─► 1. collect ──► raw.jsonl ──► 2. process ──► clean.jsonl ──► annotation / modelling
+  YouTube ───┘   anonymise        (append-only)  filter, clean   rejected.jsonl (+ reason)
+                 at collection                     deduplicate    report.json, dashboard.html
 ```
 
-## Features
+One command runs everything: `kazemo run pipeline.toml`.
 
-**Collection** — one interface, three sources, all through official APIs:
+![Dashboard](docs/dashboard.png)
 
-| Source | Targets | API | Credentials |
-|---|---|---|---|
-| Telegram | public channels and groups, optional keyword filter | Telethon (client API) | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` |
-| Threads | keyword search, or replies to a post | Threads API (graph.threads.net) | `THREADS_ACCESS_TOKEN` |
-| YouTube | comments of given videos, or of videos found by a query | YouTube Data API v3 | `YOUTUBE_API_KEY` |
+*The dashboard on synthetic example data.*
 
-- **Privacy by design:** text is cleaned and pseudonymised *before* it is written; authors, usernames and
-  platform user IDs are never stored. Each post gets a one-way `uid` hash used only for deduplication.
-- **Resumable:** output is appended; re-running the same command skips posts already in the file.
-- **Language filter:** `--lang kk` keeps only Kazakh (and code-mixed) posts.
-- **Polite:** pagination with delays, automatic retry with back-off on HTTP 429/5xx.
+---
 
-**Pre-processing:**
+## Contents
 
-| Step | Function | What it does |
-|---|---|---|
-| Normalise | `normalize` | Unicode NFC, whitespace collapsing |
-| Clean | `clean` | links → `<URL>`, `#tag` → `tag`, `ааааа` → `ааа`, optional emoji removal |
-| Pseudonymise | `pseudonymise` | `@user` → stable `@user_<hash>`, e-mails → `<EMAIL>`, phones → `<PHONE>` |
-| Script ID | `detect_script` | `cyrillic` / `latin` / `mixed` / `none` |
-| Language ID | `detect_language` | `kk` / `ru` / `unknown`, using Kazakh-specific letters (ә ғ қ ң ө ұ ү һ і) |
-| Deduplicate | `deduplicate` | drops exact and near-exact duplicates (case and punctuation ignored) |
-| Statistics | `stats`, `plot_labels` | language / script / source / label distribution, PNG chart |
+- [Quick start](#quick-start)
+- [Credentials](#credentials)
+- [The pipeline](#the-pipeline)
+- [Configuration](#configuration-pipelinetoml)
+- [Commands](#commands)
+- [Dashboard](#dashboard)
+- [Collection agent (optional)](#collection-agent-optional)
+- [Output format](#output-format)
+- [Data and ethics](#data-and-ethics)
+- [Development, CI/CD](#development)
 
-## Installation
+---
+
+## Quick start
+
+Python 3.10+.
 
 ```bash
 git clone https://github.com/tenajuro12/kazemo.git
 cd kazemo
-pip install -e ".[telegram,dev]"     # drop "telegram" if you only need Threads / YouTube
-cp .env.example .env                 # then fill in the keys you need
+python -m venv .venv
+.venv\Scripts\Activate.ps1          # Windows PowerShell;  source .venv/bin/activate on Linux/macOS
+pip install -e ".[dev]"             # add ,telegram and/or ,agent if you need them
+copy .env.example .env              # cp on Linux/macOS — then fill in your keys
+copy pipeline.example.toml pipeline.toml
+kazemo run pipeline.toml
 ```
 
-Requires Python 3.10+.
+Results appear in `data/`; open `data/dashboard.html` in a browser (or `kazemo dashboard --open`).
 
-### Getting credentials
+> On Windows, if activating the environment is blocked, run once:
+> `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+> When you download a new version, unpack it over the same folder so `.venv`, `.env` and `data/` stay.
 
-- **Telegram:** log in at <https://my.telegram.org> → *API development tools* → create an app → copy
-  `api_id` and `api_hash`. The first `kazemo collect telegram` run asks for your phone number and a code
-  and saves a local `kazemo.session` file (git-ignored). For a server or CI run `kazemo login telegram`
-  once and store the printed `TELEGRAM_SESSION` as a secret.
-- **Threads:** create an app in Meta for Developers with the Threads API, generate a long-lived access
-  token. Keyword search needs the `threads_keyword_search` permission.
-- **YouTube:** Google Cloud Console → enable *YouTube Data API v3* → *Credentials* → API key.
-  The free quota is 10,000 units/day (a comments page costs 1 unit, a search 100).
+## Credentials
 
-## Usage
+Keys live in `.env` (git-ignored); see `.env.example`. You only need the ones for the sources you use.
+
+| Source | Variables | Where to get them |
+|---|---|---|
+| Threads via Apify | `APIFY_TOKEN`, optionally `APIFY_THREADS_ACTOR`, `APIFY_THREADS_SESSION` | [console.apify.com](https://console.apify.com) → Settings → API & Integrations |
+| Threads official API | `THREADS_ACCESS_TOKEN` | Meta for Developers → Threads API (public keyword search needs the approved `threads_keyword_search` permission) |
+| Telegram | `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` (`TELEGRAM_SESSION` for servers) | [my.telegram.org](https://my.telegram.org) → API development tools |
+| YouTube | `YOUTUBE_API_KEY` | Google Cloud Console → YouTube Data API v3 |
+| Collection agent | `ANTHROPIC_API_KEY` | [platform.claude.com](https://platform.claude.com) |
+
+**Threads through Apify.** Two Apify actors are supported:
+
+| Actor | Login | Price (approx.) | `.env` |
+|---|---|---|---|
+| `futurizerush/threads-search-scraper-api` ("Threads Search Scraper API") | needs a session key tied to a Threads account | ~$4 / 1000 posts | `APIFY_THREADS_ACTOR=futurizerush/threads-search-scraper-api` and `APIFY_THREADS_SESSION=...` |
+| `aydar_cosmos/threads-scraper` (default) | none | ~$2 / 1000 posts | nothing extra |
+
+The session key gives access to a Threads account: use a secondary account and never commit `.env`.
+Apify runs sometimes fail with *"Threads was not responding"*; that is temporary on Threads' side —
+re-run later, already collected posts are skipped.
+
+## The pipeline
 
 ### 1. Collect
 
-```bash
-# last 1000 posts from two public channels, Kazakh only
-kazemo collect telegram some_kz_channel another_channel -o data/raw.jsonl --limit 1000 --lang kk
+Each source is a collector with the same interface. Posts are written to `raw.jsonl` **already anonymised**:
 
-# only messages containing a word
-kazemo collect telegram some_kz_channel --search "қорқамын" -o data/raw.jsonl
+- `@mentions` → stable pseudonyms `@user_<hash>`; links → `<URL>`; e-mails → `<EMAIL>`; phones → `<PHONE>`;
+- authors, usernames and platform user IDs are never stored; each post gets a one-way `uid` hash for deduplication;
+- hashtags, emoji and punctuation are left as posted for the next stage;
+- re-running skips posts already in the file, so collection can be resumed or extended at any time;
+- optional language filter at collection (`lang = ["kk"]`).
 
-# Threads keyword search
-kazemo collect threads "уайымдаймын" "қуаныштымын" -o data/raw.jsonl --limit 300
+### 2. Process
 
-# YouTube: comments of specific videos, or of top videos for a query
-kazemo collect youtube dQw4w9WgXcQ -o data/raw.jsonl
-kazemo collect youtube "қазақша подкаст" --mode search -o data/raw.jsonl --lang kk ru
+| Step | What it does | Default |
+|---|---|---|
+| Ad filter | promo vocabulary (kk/ru/en), prices, contacts, 5+ hashtags; a post with ≥ 2 signals is an ad | on |
+| Hashtag-only filter | posts that are mostly hashtags | on |
+| Trailing hashtags | a block of 2+ hashtags at the end of a post is removed | on |
+| Cleaning | `#tag` → `tag`, `ааааа` → `ааа`, whitespace | on |
+| Emoji | `keep`, `remove`, or `text` (😭 → `:loudly_crying_face:`); the list is always saved in `emojis` | keep |
+| Language | `kk` / `ru` / `unknown` from Kazakh-specific letters (ә ғ қ ң ө ұ ү һ і); keep only chosen languages | `kk` |
+| Too short | fewer than `min_words` words (mentions, links, emoji not counted) | 3 |
+| Courtesy formulas | short posts like "рахмет", "пайдалы болғанына қуаныштымын", "+" | on |
+| Near-duplicates | same words ignoring case, punctuation, emoji, mentions and links | on |
+
+**Why emoji, `!!!`, capitals and elongations are kept:** for emotion detection they are signal, not noise.
+Elongations are shortened to three letters so intensity stays but the vocabulary does not explode.
+
+Nothing is dropped silently: every removed post goes to `rejected.jsonl` with its `reason`, and the counts per
+reason are in `report.json` and on the dashboard. The filters are simple rules on purpose — each removal can
+be explained and checked.
+
+### 3. Report and dashboard
+
+`report.json` records what each source collected (or the error it hit), how many posts each filter removed,
+and corpus statistics (sources, languages, scripts, emoji). `dashboard.html` shows all of it plus the posts.
+
+## Configuration (`pipeline.toml`)
+
+```toml
+[output]
+dir = "data"
+dashboard = true
+
+[collect]
+limit = 100            # posts per keyword / channel
+lang = ["kk"]
+
+[[collect.source]]
+name = "threads-apify"
+targets = ["қуаныштымын", "уайымдаймын", "шаршадым", "қорқамын", "ашуым келді", "сағындым"]
+mode = "recent"        # or "top"
+
+# [[collect.source]]
+# name = "telegram"
+# targets = ["some_public_channel"]
+# search = "қуаныш"
+
+# [[collect.source]]
+# name = "youtube"
+# targets = ["қазақша подкаст"]
+# mode = "search"
+
+[process]
+lang = ["kk"]
+emoji = "keep"         # keep | remove | text
+min_words = 3
+filter_ads = true
+ad_threshold = 2
+filter_formulaic = true
+strip_trailing_hashtags = true
+deduplicate = true
 ```
 
-Each command prints a short report: `{"source": "telegram", "written": 812, "duplicates": 40, "filtered": 148}`.
-One collected line looks like:
+The full commented example is `pipeline.example.toml`. A failing source (missing key, quota, platform error)
+is recorded in the report and the other sources still run.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `kazemo run pipeline.toml` | collect → process → report → dashboard |
+| `kazemo run pipeline.toml --skip-collect` | re-process what is already collected (free; use after changing filters) |
+| `kazemo collect SOURCE TARGET... -o data/raw.jsonl` | collect from one source by hand (`--limit`, `--lang`, `--mode`, `--search`) |
+| `kazemo process data/raw.jsonl -o data/clean.jsonl` | preprocessing only (`--lang`, `--emoji`, `--min-words`, `--keep-ads`, `--keep-formulaic`, `--keep-duplicates`) |
+| `kazemo stats FILE` | corpus statistics for any JSONL file |
+| `kazemo dashboard [DATA_DIR] [--open]` | rebuild the dashboard |
+| `kazemo agent --goal "..." -o data/raw.jsonl` | LLM-planned collection (below) |
+| `kazemo login telegram` | log in once and print a `TELEGRAM_SESSION` string for servers |
+
+Sources: `threads-apify`, `threads` (official API: `--mode search|replies`), `telegram`, `youtube`
+(`--mode video|search`).
+
+## Dashboard
+
+`data/dashboard.html` is a single self-contained file: no server, no internet, no external scripts — the data
+never leaves the computer. It shows:
+
+- totals, period, kept vs rejected;
+- why posts were removed;
+- **yield per keyword / channel** — collected, kept and kept % — to decide what to collect next;
+- kept posts per day, top emoji, frequent words;
+- a post browser with *Kept* / *Rejected* tabs, search with highlighting, filters by keyword, source and
+  removal reason, sorting by date, likes and replies;
+- errors from the last run.
+
+## Collection agent (optional)
+
+`kazemo agent` lets an LLM (Claude) plan the collection: it searches public Telegram channels, chooses Kazakh
+keywords and queries, runs the collectors, compares how many Kazakh posts each target yields and drops weak
+targets, until the budget is used.
+
+```bash
+pip install -e ".[telegram,agent]"
+kazemo agent --goal "Kazakh posts expressing joy, sadness, fear, anxiety, anger, and neutral everyday posts" \
+             --sources threads-apify telegram -o data/raw.jsonl --max-posts 300 --max-steps 15
+```
+
+The model only has four tools (`find_telegram_channels`, `collect`, `corpus_stats`, `finish`), never sees API
+keys and never writes data itself; budgets (`--max-posts`, `--max-steps`, 500 posts per call) are enforced in
+code; personal Telegram accounts are filtered out in code; every step is logged to `<output>.agent.jsonl`.
+The agent only collects — it does not label anything. The same can run inside `kazemo run` via an `[agent]`
+section in the config.
+
+## Output format
+
+`raw.jsonl` — one collected post per line:
 
 ```json
-{"uid": "3b1f0c9a7d2e4f11", "source": "telegram", "channel": "some_kz_channel", "date": "2026-10-01T09:12:00+00:00",
- "text": "Бүгін өте қуаныштымын!!! <URL>", "lang": "kk", "meta": {"views": 1520}}
+{"uid": "3b1f0c9a7d2e4f11", "source": "threads", "channel": "қуаныштымын", "date": "2026-10-09T07:24:45Z",
+ "text": "Ақыры демалыс басталды, қуаныштымын 😍 #демалыс", "lang": "kk", "meta": {"likes": 12, "replies": 3, "via": "apify"}}
 ```
 
-### 1b. Or let the agent plan the collection
+`clean.jsonl` — the same fields with cleaned `text` plus `script` (`cyrillic` / `latin` / `mixed`) and
+`emojis`. `rejected.jsonl` — the original row plus `reason`.
 
-`kazemo agent` gives the job to an LLM (Claude). It searches for public Telegram channels, picks Kazakh
-keywords and YouTube queries, runs the collectors, looks at how many Kazakh posts each target yields,
-drops weak targets and tries new ones until the budget is used.
+## Data and ethics
 
-```bash
-pip install -e ".[telegram,agent]"      # and set ANTHROPIC_API_KEY in .env
-kazemo agent --goal "Kazakh posts where people express fear, anxiety, joy, sadness and anger, plus everyday neutral posts" \
-             --sources telegram youtube -o data/raw.jsonl --max-posts 3000 --max-steps 30 \
-             --seed "telegram:some_kz_channel"
-```
-
-```
-[1] find_telegram_channels {"query": "қазақша"} -> {"channels": [...]}
-[2] collect {"source": "telegram", "targets": ["...", "..."], "limit": 300} -> {"kept": 412, "per_target": {...}}
-...
-{"kept": 2987, "by_source": {"telegram": 2310, "youtube": 677}, "summary": "...", "tokens": {...}}
-```
-
-How it is kept safe and predictable:
-
-- The model only gets four tools: `find_telegram_channels`, `collect`, `corpus_stats`, `finish`. It never sees
-  API keys and cannot write files itself; all data goes through the normal collectors, so pseudonymisation
-  and the no-authors rule always apply.
-- Budgets are enforced in code, not in the prompt: `--max-posts` caps kept posts, `--max-steps` caps tool calls,
-  and each call is limited to 500 posts per target.
-- Telegram discovery returns only public channels and groups; personal accounts are filtered out in code.
-- Every step is written to `<output>.agent.jsonl`, so a run can be audited and described in a paper.
-- The model collects; it does not label anything.
-- Cost: a 30-step run is a few hundred thousand tokens at most; use `--model claude-haiku-5-5` for a cheaper run.
-
-### 2. Process and inspect
-
-```bash
-kazemo process data/raw.jsonl -o data/clean.jsonl --plot data/labels.png
-kazemo stats data/raw.jsonl
-```
-
-`process` also accepts any JSONL with a `text` field (and optional `label`), e.g. `examples/sample.jsonl`.
-
-### Python API
-
-```python
-from kazemo import clean, pseudonymise, detect_language
-from kazemo.collect import YouTubeCollector, collect_to_jsonl
-
-text = pseudonymise(clean("@aidos_kz Бүгін өте қуаныштымын!!!! https://t.me/x #той"))
-# '@user_cc88a9b1 Бүгін өте қуаныштымын!!! <URL> той'
-detect_language(text)  # 'kk'
-
-report = collect_to_jsonl(YouTubeCollector(mode="search"), ["қазақша влог"], "data/raw.jsonl", limit=200, langs={"kk"})
-```
-
-Adding a new source means subclassing `kazemo.collect.Collector` and implementing `fetch(target, limit)`.
-
-![Label distribution](docs/label_distribution.png)
-
-## Project structure
-
-```
-src/kazemo/
-  preprocess.py        text functions
-  pipeline.py          JSONL processing, statistics, chart
-  collect/             base.py (Collector, Post, sink, HTTP), telegram.py, threads.py, youtube.py
-  agent.py             LLM collection agent: tools, budgets, step log
-  config.py            .env / environment secrets
-  cli.py               kazemo collect | agent | process | stats | login
-tests/                 pytest; collectors are tested offline with fake API responses
-examples/              synthetic posts for demos and CI
-.github/               CI and release workflows, issue and PR templates
-```
+- Only public content, through official APIs or a hosted scraping service; check each platform's terms and
+  your ethics approval. Collection through Apify goes around the official Threads API and should be reported
+  as such.
+- Authors are never stored; mentions, links, e-mails and phone numbers are masked at collection time.
+- Collected data stays local: `data/`, `.env` and session files are git-ignored. Do not publish raw corpora.
+- The tool is for aggregate research on emotional language, not for monitoring or profiling individuals.
 
 ## Development
 
 ```bash
-pytest            # tests + coverage report
+pytest            # tests + coverage
 ruff check .      # lint
 ruff format .     # format
 ```
 
-Tests never touch the network or need keys: API responses, the Telegram client and the LLM are replaced by fakes
-(the agent tests replay a scripted sequence of model replies).
+Tests never touch the network or need keys: API responses, the Telegram client and the LLM are replaced by
+fakes. The dashboard tests check that the page loads nothing from the internet and that post text cannot
+break out of the embedded data.
 
-## CI/CD
-
-- **CI** (`.github/workflows/ci.yml`) — on every push and pull request to `main`:
-  Ruff lint and format check → tests on Python 3.10–3.13 with a 90 % coverage gate →
-  CLI smoke test → coverage report and sample outputs uploaded as build artifacts.
-- **CD** (`.github/workflows/release.yml`) — on a `v*` tag: tests, builds the wheel and sdist,
-  and publishes a GitHub Release with the packages attached.
-
-```bash
-git tag v0.3.0 && git push origin v0.3.0
+```
+src/kazemo/
+  collect/         base.py (Collector, Post, sink, HTTP), telegram.py, threads.py, threads_apify.py, youtube.py
+  preprocess.py    anonymisation, cleaning, emoji, language and script detection
+  filters.py       ads, courtesy formulas, short and hashtag-only posts
+  pipeline.py      the process stage, corpus statistics
+  run.py           TOML-driven pipeline
+  dashboard.py     dashboard data; dashboard.html is the page template
+  agent.py         LLM collection agent
+  config.py        .env / environment secrets
+  cli.py           command-line interface
+tests/             pytest, all offline
 ```
 
-## Data and ethics
+### CI/CD
 
-- Collect only **public** content, through official APIs, within each platform's terms of service.
-- Authors are never stored; mentions, e-mails and phone numbers are masked at collection time.
-- Collected data stays local: `data/`, `.env` and session files are git-ignored. Do not publish raw corpora.
-- The tool is for aggregate research on emotional language, not for monitoring or profiling individuals.
-- The agent is instructed, and restricted in code, to public channels, groups, search results and video comments.
+- **CI** (`.github/workflows/ci.yml`) — on every push and pull request to `main`: Ruff lint and format check →
+  tests on Python 3.10–3.13 with a 90 % coverage gate → CLI smoke test → coverage report and sample outputs
+  uploaded as build artifacts.
+- **CD** (`.github/workflows/release.yml`) — on a `v*` tag: tests, builds the wheel and sdist and publishes a
+  GitHub Release.
+
+```bash
+git tag v0.5.0 && git push origin v0.5.0
+```
 
 ## License
 
