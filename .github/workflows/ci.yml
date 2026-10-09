@@ -41,6 +41,7 @@ jobs:
         run: |
           kazemo process examples/sample.jsonl -o processed.jsonl --plot labels.png
           kazemo stats processed.jsonl
+          kazemo run pipeline.example.toml --skip-collect   # builds data/report.json and dashboard
           kazemo collect youtube test -o raw.jsonl || test $? -eq 2  # no key in CI: must fail cleanly
       - name: Upload artifacts
         if: matrix.python-version == '3.12'
@@ -51,3 +52,4 @@ jobs:
             coverage.xml
             processed.jsonl
             labels.png
+            data/dashboard.html
