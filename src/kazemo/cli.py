@@ -168,6 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     except MissingCredential as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
+    except Exception as e:
+        from .collect.base import ApiError
+
+        if not isinstance(e, ApiError):
+            raise
+        print(f"error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
