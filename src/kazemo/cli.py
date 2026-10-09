@@ -14,10 +14,10 @@ import json
 import sys
 
 from .config import MissingCredential, load_dotenv
-from .pipeline import plot_labels, process, read_jsonl, stats, write_jsonl
+from .pipeline import plot_labels, read_jsonl
 
 SOURCES = ["telegram", "threads", "threads-apify", "youtube"]
-COMMANDS = {"collect", "process", "stats", "login", "agent"}
+COMMANDS = {"collect", "process", "stats", "login", "agent", "run"}
 
 
 def _print_json(obj: dict) -> None:
@@ -49,24 +49,48 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
 
 def cmd_process(args: argparse.Namespace) -> int:
-    records = process(read_jsonl(args.input), min_chars=args.min_chars)
-    write_jsonl(records, args.output)
+    from pathlib import Path
+
+    from .pipeline import PrepConfig, corpus_report, prepare, write_rows
+
+    cfg = PrepConfig(
+        langs=None if args.lang == ["any"] else set(args.lang),
+        emoji=args.emoji,
+        min_words=args.min_words,
+        filter_ads=not args.keep_ads,
+        filter_formulaic=not args.keep_formulaic,
+        deduplicate=not args.keep_duplicates,
+    )
+    kept, rejected, report = prepare(read_jsonl(args.input), cfg)
+    write_rows(kept, args.output)
+    rejected_path = args.rejected or str(Path(args.output).with_suffix("")) + ".rejected.jsonl"
+    write_rows(rejected, rejected_path)
     if args.plot:
-        plot_labels(records, args.plot)
-    _print_json(stats(records))
+        plot_labels(kept, args.plot)
+    _print_json(
+        {
+            "total": report.total,
+            "kept": report.kept,
+            "rejected": report.rejected,
+            "rejected_file": rejected_path,
+            "corpus": corpus_report(kept),
+        }
+    )
     return 0
 
 
 def cmd_stats(args: argparse.Namespace) -> int:
-    rows = read_jsonl(args.input)
-    out = stats(process(rows, min_chars=0))
-    sources: dict[str, int] = {}
-    for r in rows:
-        if "source" in r:
-            sources[r["source"]] = sources.get(r["source"], 0) + 1
-    if sources:
-        out["source"] = sources
-    _print_json(out)
+    from .pipeline import corpus_report
+
+    _print_json(corpus_report(read_jsonl(args.input)))
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    from .run import run
+
+    report = run(args.config, skip_collect=args.skip_collect)
+    _print_json(report)
     return 0
 
 
@@ -108,7 +132,10 @@ def cmd_login(args: argparse.Namespace) -> int:  # pragma: no cover - interactiv
 
 
 def build_parser() -> argparse.ArgumentParser:
+    from . import __version__
+
     p = argparse.ArgumentParser(prog="kazemo", description="Collect and pre-process Kazakh social-media text.")
+    p.add_argument("--version", action="version", version=f"kazemo {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     c = sub.add_parser("collect", help="collect posts from a social network into JSONL")
@@ -126,16 +153,27 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--search", help="telegram: only messages containing this word")
     c.set_defaults(func=cmd_collect)
 
-    pr = sub.add_parser("process", help="clean, pseudonymise, deduplicate and tag a JSONL file")
+    pr = sub.add_parser("process", help="anonymise, filter, clean and deduplicate a JSONL file")
     pr.add_argument("input")
     pr.add_argument("-o", "--output", required=True)
-    pr.add_argument("--min-chars", type=int, default=5)
+    pr.add_argument("--lang", nargs="+", default=["kk"], choices=["kk", "ru", "unknown", "any"])
+    pr.add_argument("--emoji", choices=["keep", "remove", "text"], default="keep")
+    pr.add_argument("--min-words", type=int, default=3)
+    pr.add_argument("--keep-ads", action="store_true", help="do not filter promotional posts")
+    pr.add_argument("--keep-formulaic", action="store_true", help="do not filter courtesy formulas")
+    pr.add_argument("--keep-duplicates", action="store_true")
+    pr.add_argument("--rejected", help="where to write removed posts (default: <output>.rejected.jsonl)")
     pr.add_argument("--plot", help="PNG path for the label distribution chart")
     pr.set_defaults(func=cmd_process)
 
     s = sub.add_parser("stats", help="print corpus statistics for a JSONL file")
     s.add_argument("input")
     s.set_defaults(func=cmd_stats)
+
+    r = sub.add_parser("run", help="run the whole pipeline from a TOML config: collect -> process -> report")
+    r.add_argument("config", help="see pipeline.example.toml")
+    r.add_argument("--skip-collect", action="store_true", help="only re-process what is already in raw.jsonl")
+    r.set_defaults(func=cmd_run)
 
     a = sub.add_parser("agent", help="let an LLM plan and run the collection within a budget")
     a.add_argument("--goal", required=True, help="what the corpus should contain, in plain words")
