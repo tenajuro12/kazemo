@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+dist/
+build/
+.coverage
+coverage.xml
+.pytest_cache/
+.ruff_cache/
+processed.jsonl
+labels.png
+data/raw/
