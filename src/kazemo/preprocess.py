@@ -52,10 +52,13 @@ def anonymise(text: str) -> str:
     return pseudonymise(URL_RE.sub("<URL>", normalize(text)))
 
 
+# Emoji blocks, so emoji newer than the Unicode tables of an older Python (🥹 on 3.10) still count
+EMOJI_RANGES = ((0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2B00, 0x2BFF))
+
+
 def is_emoji(ch: str) -> bool:
-    return unicodedata.category(ch) == "So" or 0x1F3FB <= ord(ch) <= 0x1F3FF  # symbols + skin tones
-
-
+    o = ord(ch)
+    return unicodedata.category(ch) == "So" or any(a <= o <= b for a, b in EMOJI_RANGES)
 EMOJI_JOINERS = {"\u200d", "\ufe0f", "\ufe0e"}
 
 

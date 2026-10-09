@@ -119,15 +119,14 @@ def test_prepare_reasons_and_kept_fields():
 @pytest.mark.parametrize(
     "mode, expected",
     [
-        ("keep", "қатты қуаныштымын 🥹"),
+        ("keep", "қатты қуаныштымын 😭"),
         ("remove", "қатты қуаныштымын"),
-        ("text", "қатты қуаныштымын :face_holding_back_tears:"),
+        ("text", "қатты қуаныштымын :loudly_crying_face:"),
     ],
 )
 def test_emoji_modes(mode, expected):
-    out, reason = prepare_row({"text": "Бүгін қатты қуаныштымын 🥹"}, PrepConfig(emoji=mode))
-    assert reason is None and out["text"] == "Бүгін " + expected and out["emojis"] == ["🥹"]
-
+    out, reason = prepare_row({"text": "Бүгін қатты қуаныштымын 😭"}, PrepConfig(emoji=mode))
+    assert reason is None and out["text"] == "Бүгін " + expected and out["emojis"] == ["😭"]
 
 def test_config_switches():
     cfg = PrepConfig(langs=None, filter_ads=False, filter_formulaic=False, min_words=1, deduplicate=False)
