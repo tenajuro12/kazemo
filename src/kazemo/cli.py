@@ -16,7 +16,7 @@ import sys
 from .config import MissingCredential, load_dotenv
 from .pipeline import plot_labels, process, read_jsonl, stats, write_jsonl
 
-COMMANDS = {"collect", "process", "stats", "login"}
+COMMANDS = {"collect", "process", "stats", "login", "agent"}
 
 
 def _print_json(obj: dict) -> None:
@@ -69,6 +69,35 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent(args: argparse.Namespace) -> int:
+    from .agent import CollectionAgent, yields_by_source
+
+    langs = None if args.lang == ["any"] else set(args.lang)
+    agent = CollectionAgent(
+        goal=args.goal,
+        output=args.output,
+        sources=args.sources,
+        max_posts=args.max_posts,
+        max_steps=args.max_steps,
+        langs=langs,
+        model=args.model,
+        seeds=args.seed,
+        log_path=args.log,
+    )
+    state = agent.run()
+    _print_json(
+        {
+            "kept": state.written,
+            "by_source": yields_by_source(state),
+            "targets_tried": len(state.tried),
+            "summary": state.finished,
+            "log": str(agent.log_path),
+            "tokens": {"input": state.input_tokens, "output": state.output_tokens},
+        }
+    )
+    return 0
+
+
 def cmd_login(args: argparse.Namespace) -> int:  # pragma: no cover - interactive
     from .collect.telegram import login
 
@@ -106,6 +135,22 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("stats", help="print corpus statistics for a JSONL file")
     s.add_argument("input")
     s.set_defaults(func=cmd_stats)
+
+    a = sub.add_parser("agent", help="let an LLM plan and run the collection within a budget")
+    a.add_argument("--goal", required=True, help="what the corpus should contain, in plain words")
+    a.add_argument("-o", "--output", required=True)
+    a.add_argument(
+        "--sources", nargs="+", default=["telegram", "threads", "youtube"], choices=["telegram", "threads", "youtube"]
+    )
+    a.add_argument("--max-posts", type=int, default=2000, help="stop after this many kept posts")
+    a.add_argument("--max-steps", type=int, default=30, help="max tool calls the agent may make")
+    a.add_argument("--lang", nargs="+", default=["kk"], choices=["kk", "ru", "unknown", "any"])
+    a.add_argument("--model", default="claude-sonnet-5-5", help="e.g. claude-haiku-5-5 for a cheaper run")
+    a.add_argument(
+        "--seed", action="append", help="starting point, e.g. 'telegram:some_channel' or 'youtube:қазақша подкаст'"
+    )
+    a.add_argument("--log", help="JSONL log of every agent step (default: <output>.agent.jsonl)")
+    a.set_defaults(func=cmd_agent)
 
     lg = sub.add_parser("login", help="log in to Telegram once and print a reusable session string")
     lg.add_argument("service", choices=["telegram"])
