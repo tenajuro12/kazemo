@@ -35,7 +35,8 @@ How to work:
 named in the goal, plus neutral everyday topics so the corpus is not only emotional.
 - For Telegram, discover public channels and groups with find_telegram_channels, then collect from the \
 promising ones. For YouTube, use search queries that lead to Kazakh videos with active comment sections. \
-For Threads, use keyword search.
+For Threads (threads or threads-apify), use keyword search; \
+threads-apify is paid per post, so start with small limits and scale up only for keywords that work.
 - After every collect call look at the yield per target: kept posts and kept_share \
 (the share of fetched posts in the target language). Drop targets with a low kept_share \
 or few new posts; try variations of targets that worked. Avoid collecting near-duplicate targets.
@@ -82,7 +83,8 @@ def tool_specs(sources: list[str]) -> list[dict]:
                     "targets": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "telegram: public channel usernames; threads: keywords; youtube: search queries",
+                        "description": "telegram: public channel usernames; threads / threads-apify: keywords; "
+                        "youtube: search queries",
                         "maxItems": 5,
                     },
                     "limit": {"type": "integer", "description": f"max posts per target, 1-{MAX_LIMIT_PER_CALL}"},
