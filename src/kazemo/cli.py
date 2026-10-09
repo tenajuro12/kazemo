@@ -16,6 +16,7 @@ import sys
 from .config import MissingCredential, load_dotenv
 from .pipeline import plot_labels, process, read_jsonl, stats, write_jsonl
 
+SOURCES = ["telegram", "threads", "threads-apify", "youtube"]
 COMMANDS = {"collect", "process", "stats", "login", "agent"}
 
 
@@ -111,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     c = sub.add_parser("collect", help="collect posts from a social network into JSONL")
-    c.add_argument("source", choices=["telegram", "threads", "youtube"])
+    c.add_argument("source", choices=SOURCES)
     c.add_argument(
         "targets",
         nargs="+",
@@ -121,7 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--limit", type=int, default=500, help="max posts per target (default 500)")
     c.add_argument("--lang", nargs="+", choices=["kk", "ru", "unknown"], help="keep only these languages")
     c.add_argument("--min-chars", type=int, default=5)
-    c.add_argument("--mode", help="threads: search | replies; youtube: video | search")
+    c.add_argument("--mode", help="threads: search | replies; threads-apify: recent | top; youtube: video | search")
     c.add_argument("--search", help="telegram: only messages containing this word")
     c.set_defaults(func=cmd_collect)
 
@@ -139,9 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
     a = sub.add_parser("agent", help="let an LLM plan and run the collection within a budget")
     a.add_argument("--goal", required=True, help="what the corpus should contain, in plain words")
     a.add_argument("-o", "--output", required=True)
-    a.add_argument(
-        "--sources", nargs="+", default=["telegram", "threads", "youtube"], choices=["telegram", "threads", "youtube"]
-    )
+    a.add_argument("--sources", nargs="+", default=["telegram", "threads", "youtube"], choices=SOURCES)
     a.add_argument("--max-posts", type=int, default=2000, help="stop after this many kept posts")
     a.add_argument("--max-steps", type=int, default=30, help="max tool calls the agent may make")
     a.add_argument("--lang", nargs="+", default=["kk"], choices=["kk", "ru", "unknown", "any"])
