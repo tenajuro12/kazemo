@@ -28,7 +28,12 @@ def test_plot_labels(tmp_path):
 
 def test_cli_end_to_end(tmp_path, capsys):
     out = tmp_path / "clean.jsonl"
-    assert main([SAMPLE, "-o", str(out), "--plot", str(tmp_path / "p.png")]) == 0
+    assert main(["process", SAMPLE, "-o", str(out), "--plot", str(tmp_path / "p.png")]) == 0
     lines = out.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 8 and json.loads(lines[0])["lang"] == "kk"
+    assert json.loads(capsys.readouterr().out)["n"] == 8
+
+
+def test_cli_legacy_form_still_works(tmp_path, capsys):
+    assert main([SAMPLE, "-o", str(tmp_path / "o.jsonl")]) == 0
     assert json.loads(capsys.readouterr().out)["n"] == 8

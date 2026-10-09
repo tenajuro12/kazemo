@@ -11,3 +11,7 @@ coverage.xml
 processed.jsonl
 labels.png
 data/raw/
+.env
+*.session
+*.session-journal
+data/
