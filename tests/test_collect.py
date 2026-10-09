@@ -246,3 +246,152 @@ def test_telegram_channel_search_keeps_only_public_channels(monkeypatch):
     found = TelegramCollector(client=Client([])).search_channels("қазақ", 10)
     assert [c["username"] for c in found] == ["kz_news", "kz_chat"]
     assert found[0]["members"] == 5
+
+
+# ---------- Threads via Apify ------------------------------------------------------------------
+
+
+class FakePost:
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls = []
+
+    def __call__(self, url, params, body):
+        self.calls.append((url, params, body))
+        return self.reply
+
+
+APIFY_ITEMS = [
+    {
+        "postId": "111",
+        "text": "Бүгін қатты қуаныштымын, рахмет бәріне!",
+        "timestamp": 1727776800,
+        "username": "real_person",
+        "authorId": "999",
+        "displayName": "Real Person",
+        "likeCount": 12,
+        "replyCount": 3,
+        "isReply": False,
+    },
+    {"postId": "112", "text": "Сегодня просто устал", "timestamp": "2026-10-01T10:00:00Z", "likeCount": None},
+    {"postId": "113", "text": ""},
+    {"text": "без id"},
+]
+
+
+def test_apify_threads_maps_items_and_drops_authors(monkeypatch):
+    from kazemo.collect import ApifyThreadsCollector
+
+    monkeypatch.delenv("APIFY_THREADS_SESSION", raising=False)
+    http = FakePost(APIFY_ITEMS)
+    posts = list(ApifyThreadsCollector(token="tok", http=http).fetch("қуаныш", 50))
+
+    url, params, body = http.calls[0]
+    assert url.endswith("/actors/futurizerush~threads-search-scraper-api/run-sync-get-dataset-items")
+    assert params == {"maxItems": 50, "timeout": 290}  # token goes in a header, not the URL
+    assert body == {"keywords": ["қуаныш"], "maxResults": 50, "searchType": "recent"}
+    assert len(posts) == 2
+    p = posts[0]
+    assert p.source == "threads" and p.channel == "қуаныш" and p.lang == "kk"
+    assert p.date.startswith("2024-10-01") and p.meta == {"likes": 12, "replies": 3, "is_reply": False, "via": "apify"}
+    dumped = json.dumps(p.__dict__, ensure_ascii=False)
+    assert "real_person" not in dumped and "999" not in dumped and "Real Person" not in dumped
+    assert posts[1].date == "2026-10-01T10:00:00Z" and posts[1].meta["likes"] == 0
+
+
+def test_apify_threads_options(monkeypatch):
+    from kazemo.collect import ApifyThreadsCollector
+
+    monkeypatch.setenv("APIFY_THREADS_SESSION", "sess")
+    monkeypatch.setenv("APIFY_THREADS_ACTOR", "someone/other-actor")
+    c = ApifyThreadsCollector(mode="top", token="t", http=FakePost([]))
+    assert c.build_input("x", 5) == {"keywords": ["x"], "maxResults": 10, "searchType": "top", "sessionId": "sess"}
+    assert c.build_input("x", 9999)["maxResults"] == 2000
+    list(c.fetch("x", 5))
+    assert "someone~other-actor" in c.http.calls[0][0]
+    with pytest.raises(ValueError):
+        ApifyThreadsCollector(mode="search", token="t")
+
+
+def test_apify_threads_errors(monkeypatch):
+    from kazemo.collect import ApifyThreadsCollector
+    from kazemo.collect.base import ApiError
+
+    with pytest.raises(ApiError, match="not enough credit"):
+        list(ApifyThreadsCollector(token="t", http=FakePost({"error": "not enough credit"})).fetch("x", 5))
+
+    def timeout(url, params, body):
+        raise ApiError("HTTP 408 from apify: run timed out")
+
+    with pytest.raises(ApiError, match="smaller --limit"):
+        list(ApifyThreadsCollector(token="t", http=timeout).fetch("x", 2000))
+
+    def other(url, params, body):
+        raise ApiError("HTTP 402 from apify")
+
+    with pytest.raises(ApiError, match="402"):
+        list(ApifyThreadsCollector(token="t", http=other).fetch("x", 5))
+    monkeypatch.delenv("APIFY_TOKEN", raising=False)
+    with pytest.raises(MissingCredential, match="APIFY_TOKEN"):
+        ApifyThreadsCollector()
+
+
+def test_cli_collect_threads_apify(tmp_path, monkeypatch, capsys):
+    import kazemo.collect.base as base
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APIFY_TOKEN", "tok")
+    calls = []
+
+    def fake(url, params, body, headers=None):
+        calls.append((url, params, body, headers))
+        return APIFY_ITEMS
+
+    monkeypatch.setattr(base, "http_post_json", fake)
+    assert main(["collect", "threads-apify", "қуаныш", "-o", "raw.jsonl", "--lang", "kk", "--mode", "top"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "source": "threads-apify",
+        "written": 1,
+        "duplicates": 0,
+        "filtered": 1,
+    }
+    assert calls[0][2]["searchType"] == "top"
+    assert calls[0][3] == {"Authorization": "Bearer tok"} and "tok" not in calls[0][0]
+
+
+def test_http_post_json_retries_then_succeeds(monkeypatch):
+    import io
+    import urllib.error
+
+    import kazemo.collect.base as base
+
+    sent = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout):
+        sent.append(req)
+        if len(sent) == 1:
+            raise urllib.error.HTTPError(req.full_url, 503, "busy", {}, io.BytesIO(b""))
+        return Resp(b'[{"postId": "1"}]')
+
+    monkeypatch.setattr(base.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(base.time, "sleep", lambda s: None)
+    out = base.http_post_json(
+        "https://x.test/run", {"a": 1}, {"keywords": ["сәлем"]}, headers={"Authorization": "Bearer t"}
+    )
+    assert out == [{"postId": "1"}]
+    assert sent[1].get_method() == "POST" and json.loads(sent[1].data) == {"keywords": ["сәлем"]}
+    assert sent[1].get_header("Authorization") == "Bearer t"
+
+    def always_401(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 401, "no", {}, io.BytesIO(b"bad token"))
+
+    monkeypatch.setattr(base.urllib.request, "urlopen", always_401)
+    with pytest.raises(base.ApiError, match="401"):
+        base.http_post_json("https://x.test/run", {}, {})
