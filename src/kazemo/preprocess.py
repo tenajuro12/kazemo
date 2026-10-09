@@ -59,6 +59,8 @@ EMOJI_RANGES = ((0x1F000, 0x1FAFF), (0x2600, 0x27BF), (0x2B00, 0x2BFF))
 def is_emoji(ch: str) -> bool:
     o = ord(ch)
     return unicodedata.category(ch) == "So" or any(a <= o <= b for a, b in EMOJI_RANGES)
+
+
 EMOJI_JOINERS = {"\u200d", "\ufe0f", "\ufe0e"}
 
 

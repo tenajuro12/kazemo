@@ -128,6 +128,7 @@ def test_emoji_modes(mode, expected):
     out, reason = prepare_row({"text": "Бүгін қатты қуаныштымын 😭"}, PrepConfig(emoji=mode))
     assert reason is None and out["text"] == "Бүгін " + expected and out["emojis"] == ["😭"]
 
+
 def test_config_switches():
     cfg = PrepConfig(langs=None, filter_ads=False, filter_formulaic=False, min_words=1, deduplicate=False)
     kept, _, _ = prepare([{"text": AD}, {"text": "Рахмет!"}, {"text": "Рахмет!"}, {"text": "Спасибо всем"}], cfg)
