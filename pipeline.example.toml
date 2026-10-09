@@ -42,3 +42,11 @@ ad_threshold = 2             # how many promo signals make a post an ad
 filter_formulaic = true      # "рахмет", "пайдалы болғанына қуаныштымын", "+"...
 strip_trailing_hashtags = true
 deduplicate = true           # same words ignoring punctuation, emoji, case, mentions
+
+# Optional: draft labels from your own model, for human review (nothing is labelled automatically)
+# [annotate]
+# model = "../thesis/predict_distress.py:predict"   # or "labse-joblib:models/v5"
+# model_name = "hier-v5"                            # stored with every pre-label
+# review_below = 0.6                                # flag pre-labels below this confidence
+# sort = "review"                                   # distress and doubtful posts first
+# export = ["csv", "labelstudio"]                   # review.csv for Excel, labelstudio.json for Label Studio

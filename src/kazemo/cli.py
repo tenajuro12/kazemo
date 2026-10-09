@@ -17,7 +17,7 @@ from .config import MissingCredential, load_dotenv
 from .pipeline import plot_labels, read_jsonl
 
 SOURCES = ["telegram", "threads", "threads-apify", "youtube"]
-COMMANDS = {"collect", "process", "stats", "login", "agent", "run"}
+COMMANDS = {"collect", "process", "stats", "login", "agent", "run", "annotate"}
 
 
 def _print_json(obj: dict) -> None:
@@ -83,6 +83,41 @@ def cmd_stats(args: argparse.Namespace) -> int:
     from .pipeline import corpus_report
 
     _print_json(corpus_report(read_jsonl(args.input)))
+    return 0
+
+
+def cmd_annotate(args: argparse.Namespace) -> int:
+
+    from .annotate import (
+        EXPORTERS,
+        annotate,
+        default_model_name,
+        export_jsonl,
+        load_predictor,
+        review_order,
+        summary,
+    )
+
+    rows = read_jsonl(args.input)
+    predictor = load_predictor(args.model)
+    out = annotate(
+        rows,
+        predictor,
+        model_name=args.model_name or default_model_name(args.model),
+        batch_size=args.batch_size,
+        review_below=args.review_below,
+        text_field=args.text_field,
+    )
+    if args.sort == "review":
+        out = review_order(out)
+    extra = {}
+    if args.format == "jsonl":
+        export_jsonl(out, args.output)
+    else:
+        result = EXPORTERS[args.format](out, args.output)
+        if result:
+            extra["label_config"] = str(result)
+    _print_json({**summary(out), "output": args.output, **extra})
     return 0
 
 
@@ -169,6 +204,22 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("stats", help="print corpus statistics for a JSONL file")
     s.add_argument("input")
     s.set_defaults(func=cmd_stats)
+
+    an = sub.add_parser("annotate", help="draft labels from your own model for human review")
+    an.add_argument("input", help="prepared JSONL (e.g. clean.jsonl)")
+    an.add_argument("-o", "--output", required=True)
+    an.add_argument(
+        "--model",
+        required=True,
+        help="'path/to/file.py:predict', 'package.module:predict' or 'labse-joblib:DIR'",
+    )
+    an.add_argument("--model-name", help="version tag stored with every pre-label")
+    an.add_argument("--format", choices=["jsonl", "csv", "labelstudio"], default="jsonl")
+    an.add_argument("--review-below", type=float, default=0.6, help="flag pre-labels below this confidence")
+    an.add_argument("--sort", choices=["input", "review"], default="input", help="review: distress and doubtful first")
+    an.add_argument("--batch-size", type=int, default=64)
+    an.add_argument("--text-field", default="text")
+    an.set_defaults(func=cmd_annotate)
 
     r = sub.add_parser("run", help="run the whole pipeline from a TOML config: collect -> process -> report")
     r.add_argument("config", help="see pipeline.example.toml")

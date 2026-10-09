@@ -4,7 +4,8 @@
     kazemo run pipeline.toml --skip-collect
 
 Outputs in ``[output].dir``: raw.jsonl (anonymised, append-only), clean.jsonl,
-rejected.jsonl (with a reason per post) and report.json.
+rejected.jsonl (with a reason per post), report.json and, with ``[annotate]``,
+prelabeled.jsonl plus optional review.csv / labelstudio.json.
 """
 
 from __future__ import annotations
@@ -100,6 +101,35 @@ def prep_config(cfg: dict) -> PrepConfig:
     )
 
 
+def annotate_stage(cfg: dict, rows: list[dict], out_dir: Path) -> dict | None:
+    """Optional ``[annotate]``: draft labels from the researcher's own model."""
+    a = cfg.get("annotate")
+    if not a or not a.get("enabled", True) or not rows:
+        return None
+    from .annotate import EXPORTERS, annotate, default_model_name, export_jsonl, load_predictor, review_order, summary
+
+    try:
+        predictor = load_predictor(a["model"])
+    except (ImportError, OSError, AttributeError, ValueError, RuntimeError) as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+    out = annotate(
+        rows,
+        predictor,
+        model_name=a.get("model_name") or default_model_name(a["model"]),
+        batch_size=a.get("batch_size", 64),
+        review_below=a.get("review_below", 0.6),
+    )
+    if a.get("sort", "review") == "review":
+        out = review_order(out)
+    export_jsonl(out, out_dir / "prelabeled.jsonl")
+    files = ["prelabeled.jsonl"]
+    for fmt in a.get("export", []):
+        name = {"csv": "review.csv", "labelstudio": "labelstudio.json"}[fmt]
+        EXPORTERS[fmt](out, out_dir / name)
+        files.append(name)
+    return {**summary(out), "files": files}
+
+
 def run(config_path: str | Path, skip_collect: bool = False, collectors: dict | None = None) -> dict:
     cfg = load_config(config_path)
     out_dir = Path(cfg.get("output", {}).get("dir", "data"))
@@ -119,5 +149,8 @@ def run(config_path: str | Path, skip_collect: bool = False, collectors: dict | 
     write_rows(rejected, out_dir / "rejected.jsonl")
     report["process"] = {"total": prep.total, "kept": prep.kept, "rejected": prep.rejected}
     report["corpus"] = corpus_report(kept)
+    ann = annotate_stage(cfg, kept, out_dir)
+    if ann is not None:
+        report["annotate"] = ann
     (out_dir / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report
