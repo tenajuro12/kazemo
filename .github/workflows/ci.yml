@@ -38,7 +38,10 @@ jobs:
       - name: Run tests with coverage
         run: pytest --cov=kazemo --cov-report=xml --cov-fail-under=90
       - name: Smoke-test the CLI
-        run: kazemo examples/sample.jsonl -o processed.jsonl --plot labels.png
+        run: |
+          kazemo process examples/sample.jsonl -o processed.jsonl --plot labels.png
+          kazemo stats processed.jsonl
+          kazemo collect youtube test -o raw.jsonl || test $? -eq 2  # no key in CI: must fail cleanly
       - name: Upload artifacts
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
