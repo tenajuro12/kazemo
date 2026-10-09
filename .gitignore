@@ -15,3 +15,6 @@ data/raw/
 *.session
 *.session-journal
 data/
+.idea/
+uv.lock
+pipeline.toml
