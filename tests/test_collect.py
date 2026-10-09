@@ -220,3 +220,29 @@ def test_http_get_json_raises_on_403(monkeypatch):
     monkeypatch.setattr(base.urllib.request, "urlopen", fake_urlopen)
     with pytest.raises(base.ApiError, match="403"):
         base.http_get_json("https://x.test/api", {})
+
+
+def test_telegram_channel_search_keeps_only_public_channels(monkeypatch):
+    import kazemo.collect.telegram as tg
+
+    class Client(FakeTelegram):
+        async def __call__(self, request):
+            return type(
+                "R",
+                (),
+                {
+                    "chats": [
+                        type(
+                            "C", (), {"username": "kz_news", "title": "KZ", "broadcast": True, "participants_count": 5}
+                        )(),
+                        type("C", (), {"username": "kz_chat", "title": "Chat", "megagroup": True})(),
+                        type("C", (), {"username": None, "title": "Private", "broadcast": True})(),
+                        type("C", (), {"username": "small_group", "title": "Basic group"})(),
+                    ]
+                },
+            )()
+
+    monkeypatch.setattr(tg, "_search_request", lambda q, n: (q, n))
+    found = TelegramCollector(client=Client([])).search_channels("қазақ", 10)
+    assert [c["username"] for c in found] == ["kz_news", "kz_chat"]
+    assert found[0]["members"] == 5

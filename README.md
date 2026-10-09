@@ -8,9 +8,9 @@ It is the data layer of a master's thesis on automatically determining users' em
 social-network messages with NLP.
 
 ```
-Telegram ─┐
-Threads  ─┼─► kazemo collect ─► raw.jsonl ─► kazemo process ─► clean.jsonl ─► annotation / LaBSE
-YouTube  ─┘   (pseudonymised, deduplicated, language-filtered)    (+ stats, label chart)
+Telegram ─┐   kazemo collect   (you choose the targets)
+Threads  ─┼─►       or         ─► raw.jsonl ─► kazemo process ─► clean.jsonl ─► annotation / LaBSE
+YouTube  ─┘   kazemo agent     (an LLM chooses targets within a budget)
 ```
 
 ## Features
@@ -90,6 +90,38 @@ One collected line looks like:
  "text": "Бүгін өте қуаныштымын!!! <URL>", "lang": "kk", "meta": {"views": 1520}}
 ```
 
+### 1b. Or let the agent plan the collection
+
+`kazemo agent` gives the job to an LLM (Claude). It searches for public Telegram channels, picks Kazakh
+keywords and YouTube queries, runs the collectors, looks at how many Kazakh posts each target yields,
+drops weak targets and tries new ones until the budget is used.
+
+```bash
+pip install -e ".[telegram,agent]"      # and set ANTHROPIC_API_KEY in .env
+kazemo agent --goal "Kazakh posts where people express fear, anxiety, joy, sadness and anger, plus everyday neutral posts" \
+             --sources telegram youtube -o data/raw.jsonl --max-posts 3000 --max-steps 30 \
+             --seed "telegram:some_kz_channel"
+```
+
+```
+[1] find_telegram_channels {"query": "қазақша"} -> {"channels": [...]}
+[2] collect {"source": "telegram", "targets": ["...", "..."], "limit": 300} -> {"kept": 412, "per_target": {...}}
+...
+{"kept": 2987, "by_source": {"telegram": 2310, "youtube": 677}, "summary": "...", "tokens": {...}}
+```
+
+How it is kept safe and predictable:
+
+- The model only gets four tools: `find_telegram_channels`, `collect`, `corpus_stats`, `finish`. It never sees
+  API keys and cannot write files itself; all data goes through the normal collectors, so pseudonymisation
+  and the no-authors rule always apply.
+- Budgets are enforced in code, not in the prompt: `--max-posts` caps kept posts, `--max-steps` caps tool calls,
+  and each call is limited to 500 posts per target.
+- Telegram discovery returns only public channels and groups; personal accounts are filtered out in code.
+- Every step is written to `<output>.agent.jsonl`, so a run can be audited and described in a paper.
+- The model collects; it does not label anything.
+- Cost: a 30-step run is a few hundred thousand tokens at most; use `--model claude-haiku-5-5` for a cheaper run.
+
 ### 2. Process and inspect
 
 ```bash
@@ -123,8 +155,9 @@ src/kazemo/
   preprocess.py        text functions
   pipeline.py          JSONL processing, statistics, chart
   collect/             base.py (Collector, Post, sink, HTTP), telegram.py, threads.py, youtube.py
+  agent.py             LLM collection agent: tools, budgets, step log
   config.py            .env / environment secrets
-  cli.py               kazemo collect | process | stats | login
+  cli.py               kazemo collect | agent | process | stats | login
 tests/                 pytest; collectors are tested offline with fake API responses
 examples/              synthetic posts for demos and CI
 .github/               CI and release workflows, issue and PR templates
@@ -138,7 +171,8 @@ ruff check .      # lint
 ruff format .     # format
 ```
 
-Tests never touch the network or need keys: API responses and the Telegram client are replaced by fakes.
+Tests never touch the network or need keys: API responses, the Telegram client and the LLM are replaced by fakes
+(the agent tests replay a scripted sequence of model replies).
 
 ## CI/CD
 
@@ -149,7 +183,7 @@ Tests never touch the network or need keys: API responses and the Telegram clien
   and publishes a GitHub Release with the packages attached.
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v0.3.0 && git push origin v0.3.0
 ```
 
 ## Data and ethics
@@ -158,6 +192,7 @@ git tag v0.2.0 && git push origin v0.2.0
 - Authors are never stored; mentions, e-mails and phone numbers are masked at collection time.
 - Collected data stays local: `data/`, `.env` and session files are git-ignored. Do not publish raw corpora.
 - The tool is for aggregate research on emotional language, not for monitoring or profiling individuals.
+- The agent is instructed, and restricted in code, to public channels, groups, search results and video comments.
 
 ## License
 

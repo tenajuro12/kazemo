@@ -29,6 +29,13 @@ def _client(session_file: str = "kazemo.session"):
     return TelegramClient(session, api_id, api_hash)
 
 
+def _search_request(query: str, limit: int):
+    """Build Telethon's contacts.Search request (separate so tests can replace it)."""
+    from telethon.tl.functions.contacts import SearchRequest
+
+    return SearchRequest(q=query, limit=limit)
+
+
 class TelegramCollector(Collector):
     name = "telegram"
 
@@ -58,6 +65,28 @@ class TelegramCollector(Collector):
 
     def fetch(self, target: str, limit: int) -> Iterator[Post]:
         yield from asyncio.run(self._fetch(target.lstrip("@"), limit))
+
+    async def _search_channels(self, query: str, limit: int) -> list[dict]:
+        client = self._client or _client()
+        async with client:
+            found = await client(_search_request(query, limit))
+        out = []
+        for chat in getattr(found, "chats", []):
+            username = getattr(chat, "username", None)
+            is_public = getattr(chat, "broadcast", False) or getattr(chat, "megagroup", False)
+            if username and is_public:  # only public channels and groups, never personal accounts
+                out.append(
+                    {
+                        "username": username,
+                        "title": getattr(chat, "title", ""),
+                        "members": getattr(chat, "participants_count", None),
+                    }
+                )
+        return out
+
+    def search_channels(self, query: str, limit: int = 20) -> list[dict]:
+        """Find public channels and groups whose name or description matches ``query``."""
+        return asyncio.run(self._search_channels(query, limit))
 
 
 def login() -> str:  # pragma: no cover - interactive
