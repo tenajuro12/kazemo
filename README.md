@@ -19,7 +19,6 @@ One command runs everything: `kazemo run pipeline.toml`.
 
 ![Dashboard](docs/dashboard.png)
 
-*The dashboard on synthetic example data.*
 
 ---
 
