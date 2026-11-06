@@ -265,6 +265,46 @@ tests/             pytest, all offline
 git tag v0.5.0 && git push origin v0.5.0
 ```
 
+### Docker
+
+```bash
+docker build -t kazemo .                                   # runtime image, non-root user
+docker run --rm kazemo --help
+docker run --rm -v "$PWD/data:/data" --env-file .env kazemo run /data/pipeline.toml
+docker run --rm -p 8000:8000 --entrypoint /app/deploy/demo.sh kazemo   # demo dashboard on :8000
+```
+
+The `Dockerfile` has three stages: `test` (source + dev dependencies, used by CI to run lint and tests),
+`build` (wheel) and `runtime` (only the installed package). The image contains no keys and no collected
+data; the demo uses synthetic posts from `examples/demo_raw.jsonl`. `kazemo serve DATA_DIR` serves the
+dashboard over HTTP (`/` and `/healthz`; post files are never served).
+
+### Jenkins
+
+`Jenkinsfile` defines the same CI plus CD: checkout → build test image → lint → unit tests (JUnit and
+coverage reports) → build runtime image → smoke test → optional push to Docker Hub → deploy to a staging
+container (port 8090) → optional deployment to Minikube. A local Jenkins with Docker access is in `jenkins/`:
+
+```bash
+cd jenkins
+docker compose up -d --build                                       # http://localhost:8080
+docker exec kazemo-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+Then create a *Pipeline* job → *Pipeline script from SCM* → Git → `https://github.com/tenajuro12/kazemo.git`,
+branch `*/main`, script path `Jenkinsfile`. The job polls GitHub every two minutes, so every commit is built.
+Credentials used by optional stages: `dockerhub` (username + access token) and `kubeconfig` (secret file).
+
+### Kubernetes (Minikube)
+
+```bash
+minikube start
+minikube image load tenajuro12/kazemo:latest     # or push the image to Docker Hub
+kubectl apply -f deploy/k8s/
+kubectl rollout status deployment/kazemo
+minikube service kazemo --url                    # open the dashboard
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

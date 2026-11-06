@@ -1,0 +1,49 @@
+# kazemo demo dashboard on Kubernetes (Minikube / k3s).
+# The container processes the bundled synthetic posts and serves the dashboard on port 8000.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kazemo
+  labels:
+    app: kazemo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kazemo
+  template:
+    metadata:
+      labels:
+        app: kazemo
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: kazemo
+          image: tenajuro12/kazemo:latest   # replaced with the exact tag by the Jenkins pipeline
+          imagePullPolicy: IfNotPresent
+          command: ["/app/deploy/demo.sh"]
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}

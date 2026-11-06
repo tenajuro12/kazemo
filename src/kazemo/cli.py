@@ -17,7 +17,7 @@ from .config import MissingCredential, load_dotenv
 from .pipeline import plot_labels, read_jsonl
 
 SOURCES = ["telegram", "threads", "threads-apify", "youtube"]
-COMMANDS = {"collect", "process", "stats", "login", "agent", "run", "dashboard"}
+COMMANDS = {"collect", "process", "stats", "login", "agent", "run", "dashboard", "serve"}
 
 
 def _print_json(obj: dict) -> None:
@@ -95,6 +95,20 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         import webbrowser
 
         webbrowser.open(path.resolve().as_uri())
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:  # pragma: no cover - blocks until stopped
+    from .dashboard import make_server
+
+    server = make_server(args.data, args.host, args.port)
+    print(f"serving {args.data} on http://{args.host}:{args.port}/", file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
     return 0
 
 
@@ -187,6 +201,12 @@ def build_parser() -> argparse.ArgumentParser:
     db.add_argument("-o", "--output", help="HTML file (default: <data>/dashboard.html)")
     db.add_argument("--open", action="store_true", help="open it in the browser")
     db.set_defaults(func=cmd_dashboard)
+
+    sv = sub.add_parser("serve", help="serve the dashboard of a data folder over HTTP (containers, Kubernetes)")
+    sv.add_argument("data", nargs="?", default="data")
+    sv.add_argument("--host", default="127.0.0.1", help="use 0.0.0.0 inside a container")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.set_defaults(func=cmd_serve)
 
     r = sub.add_parser("run", help="run the whole pipeline from a TOML config: collect -> process -> report")
     r.add_argument("config", help="see pipeline.example.toml")

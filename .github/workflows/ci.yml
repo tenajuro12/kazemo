@@ -53,3 +53,18 @@ jobs:
             processed.jsonl
             labels.png
             data/dashboard.html
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t kazemo:ci .
+      - name: Smoke-test image
+        run: |
+          docker run --rm kazemo:ci --version
+          docker run -d --name demo -p 8000:8000 --entrypoint /app/deploy/demo.sh kazemo:ci
+          for i in $(seq 1 30); do curl -fs http://localhost:8000/healthz && break; sleep 1; done
+          curl -fs http://localhost:8000/ | grep -q "kazemo"
+          docker rm -f demo

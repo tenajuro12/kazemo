@@ -1,0 +1,25 @@
+# Local Jenkins for the kazemo pipeline.
+#
+#   cd jenkins
+#   docker compose up -d --build
+#   docker exec kazemo-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+#   open http://localhost:8080
+#
+# The host Docker socket is mounted so pipeline steps can build and run images.
+# Jenkins runs as root inside the container to be allowed to use that socket on
+# Docker Desktop. This is fine for a local lab machine, not for a shared server.
+services:
+  jenkins:
+    build: .
+    image: kazemo-jenkins:lts
+    container_name: kazemo-jenkins
+    user: root
+    ports:
+      - "8080:8080"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  jenkins_home:

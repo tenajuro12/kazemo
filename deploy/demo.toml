@@ -1,0 +1,10 @@
+# Demo configuration used by the container image and the Kubernetes deployment.
+# It only re-processes the bundled synthetic posts (no collection, no API keys).
+[output]
+dir = "/data"
+dashboard = true
+
+[process]
+lang = ["kk"]
+emoji = "keep"
+min_words = 3

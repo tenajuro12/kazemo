@@ -1,0 +1,4 @@
+# shell scripts and pipeline files must keep LF line endings (they run in Linux containers)
+*.sh text eol=lf
+Jenkinsfile text eol=lf
+Dockerfile text eol=lf

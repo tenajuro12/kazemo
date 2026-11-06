@@ -1,0 +1,20 @@
+# keep the build context small and never send secrets or collected data to the Docker daemon
+.git
+.github
+.venv
+**/__pycache__
+**/*.pyc
+*.egg-info
+.pytest_cache
+.ruff_cache
+.coverage
+coverage.xml
+reports/
+dist/
+build/
+data/
+.env
+*.session
+*.session-journal
+jenkins/
+docs/

@@ -71,3 +71,34 @@ def test_cli_and_run_write_dashboard(tmp_path, capsys, monkeypatch):
     assert rep["dashboard"].endswith("dashboard.html")
     (tmp_path / "q.toml").write_text('[output]\ndir = "data"\ndashboard = false\n', encoding="utf-8")
     assert "dashboard" not in run("q.toml", skip_collect=True)
+
+
+def test_server_serves_dashboard_and_health(tmp_path):
+    import threading
+    import urllib.error
+    import urllib.request
+
+    from kazemo.dashboard import make_server
+
+    (tmp_path / "dashboard.html").write_text("<html>ok</html>", encoding="utf-8")
+    (tmp_path / "raw.jsonl").write_text('{"text": "secret"}\n', encoding="utf-8")
+    server = make_server(tmp_path, port=0)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+
+        def get(path):
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}") as r:
+                return r.status, r.read().decode()
+
+        assert get("/healthz") == (200, "ok")
+        assert get("/") == (200, "<html>ok</html>")
+        for private in ("/raw.jsonl", "/report.json", "/../etc/passwd"):  # posts are never served
+            try:
+                get(private)
+                raise AssertionError(private)
+            except urllib.error.HTTPError as e:
+                assert e.code == 404
+    finally:
+        server.shutdown()
+        server.server_close()

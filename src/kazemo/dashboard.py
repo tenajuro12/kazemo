@@ -131,6 +131,46 @@ def write_dashboard(data_dir: str | Path, output: str | Path | None = None) -> P
     return out
 
 
+def make_server(data_dir: str | Path, host: str = "127.0.0.1", port: int = 8000):
+    """HTTP server for a data folder: ``/`` is the dashboard, ``/healthz`` a liveness probe.
+
+    Used to run the dashboard in a container or on Kubernetes. Only the dashboard and
+    report are served, never the post files.
+    """
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    root = Path(data_dir)
+    routes = {
+        "/": ("dashboard.html", "text/html; charset=utf-8"),
+        "/dashboard.html": ("dashboard.html", "text/html; charset=utf-8"),
+        "/report.json": ("report.json", "application/json; charset=utf-8"),
+    }
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802 - http.server API
+            path = self.path.split("?")[0]
+            if path == "/healthz":
+                return self._send(200, b"ok", "text/plain; charset=utf-8")
+            name, ctype = routes.get(path, (None, None))
+            if name and (root / name).is_file():
+                return self._send(200, (root / name).read_bytes(), ctype)
+            return self._send(404, b"not found", "text/plain; charset=utf-8")
+
+        def _send(self, code: int, body: bytes, ctype: str) -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, fmt, *args):  # one line per request on stderr
+            import sys
+
+            print(f"{self.address_string()} {fmt % args}", file=sys.stderr)
+
+    return ThreadingHTTPServer((host, port), Handler)
+
+
 def no_external_resources(html: str) -> bool:
     """True if the page loads nothing from the network (used in tests)."""
     return not re.search(r"""(src|href)\s*=\s*["']https?://""", html)
